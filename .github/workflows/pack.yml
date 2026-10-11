@@ -1,0 +1,77 @@
+name: pack
+
+# Build-and-pack only: produces the Go module zip for github.com/Masterminds/goutils.
+# Tests run on Travis (.travis.yml), so this workflow has no test step.
+on:
+  workflow_dispatch:
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go (used only to run the module-zip helper)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: false
+
+      - name: Copy module tree (without .git and this workflow)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/src"
+          tar -C "$GITHUB_WORKSPACE" --exclude=./.git -cf - . | tar -C "$RUNNER_TEMP/src" -xf -
+          rm "$RUNNER_TEMP/src/.github/workflows/pack.yml"
+
+      - name: Build module-zip helper
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/zipper"
+          cd "$RUNNER_TEMP/zipper"
+          cat > create_mod.go <<'EOF'
+          package main
+
+          import (
+              "log"
+              "os"
+
+              "golang.org/x/mod/module"
+              "golang.org/x/mod/zip"
+          )
+
+          func main() {
+              if len(os.Args) != 5 {
+                log.Fatal("usage: create_mod <module-path> <version> <source-dir> <output-zip>")
+              }
+              m := module.Version{Path: os.Args[1], Version: os.Args[2]}
+              f, err := os.Create(os.Args[4])
+              if err != nil {
+                log.Fatal(err)
+              }
+              defer f.Close()
+              if err := zip.CreateFromDir(f, m, os.Args[3]); err != nil {
+                log.Fatal(err)
+              }
+              log.Printf("created module zip: %s", os.Args[4])
+          }
+          EOF
+          go mod init example.com/zipper
+          go get golang.org/x/mod@v0.17.0
+          go build -o create_mod .
+
+      - name: Create module zip
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/out"
+          "$RUNNER_TEMP/zipper/create_mod" github.com/Masterminds/goutils v1.1.0 "$RUNNER_TEMP/src" "$RUNNER_TEMP/out/v1.1.0.zip"
+          unzip -l "$RUNNER_TEMP/out/v1.1.0.zip"
+
+      - name: Upload module zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: goutils-module-zip
+          path: ${{ runner.temp }}/out/v1.1.0.zip
+          if-no-files-found: error

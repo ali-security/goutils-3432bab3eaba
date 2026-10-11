@@ -4,7 +4,25 @@ go:
   - 1.6
   - 1.7
   - 1.8
-  - tip
+  - 1.11
+
+before_install:
+  - |
+    export GO111MODULE=off
+    if ! go version 2>/dev/null | grep -q "go${TRAVIS_GO_VERSION} "; then
+      GOROOT_DIR="$HOME/goroot-${TRAVIS_GO_VERSION}"
+      mkdir -p "$GOROOT_DIR"
+      curl -sSfL "https://dl.google.com/go/go${TRAVIS_GO_VERSION}.linux-amd64.tar.gz" | tar -xz --strip-components=1 -C "$GOROOT_DIR"
+      export GOROOT="$GOROOT_DIR"
+      export PATH="$GOROOT/bin:$PATH"
+    fi
+  - go version && go env GOPATH
+  - |
+    IMPORT_DIR="$(go env GOPATH)/src/github.com/Masterminds/goutils"
+    mkdir -p "$(dirname "$IMPORT_DIR")"
+    cp -a "$TRAVIS_BUILD_DIR" "$IMPORT_DIR"
+    cd "$IMPORT_DIR"
+    pwd
 
 script:
   - go test -v
